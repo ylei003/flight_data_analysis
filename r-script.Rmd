@@ -1,0 +1,367 @@
+---
+title: "ST2195 Coursework"
+author: "210406713 - Lei Yuhe"
+date: "2023-02-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Set working directory to the source file location
+The source file location includes this .Rmd file and dataverse_files
+```{r}
+# setwd("C:/Users/Lei Yuhe/OneDrive - SIM - Singapore Institute of Management/UOL_YearTwo/ST2195/210406713")
+```
+
+# Install and load packages
+```{r}
+# install.packages("dplyr")
+library(dplyr)   #Used to manipulate the data frames
+#install.packages("tidyr")
+library(tidyr)
+#install.packages("ggtext")
+library(ggtext)
+library(ggplot2)
+```
+
+## Data Preparation
+1. Extract all compressed flight data files in the "dataverse_files" folder
+2. Read the extracted .csv files into data frames
+```{r}
+df_2005 <- read.csv("dataverse_files/2005.csv", header = TRUE, sep = ',') 
+df_2006 <- read.csv("dataverse_files/2006.csv", header = TRUE, sep = ',') 
+# View the first 6 rows
+head(df_2005)
+head(df_2006)
+```
+
+3. Merge the flight data frames
+```{r}
+flight_df <- df_2005 %>% full_join(df_2006) 
+```
+
+4. View the summary and structure of the data frame
+```{r}
+summary(flight_df)
+str(flight_df)
+```
+
+5. Remove rows with at least one null value, and check for any duplicated rows
+```{r}
+flight_df <- flight_df %>% drop_na()
+sum(is.na(flight_df))
+flight_df %>% distinct()
+```
+
+## Data Analysis
+# 1. When is the best time of day, day of the week, and time of year to fly to  minimise delays?
+```{r}
+# Group time into categories
+flight_delayed <- filter(flight_df, ArrDelay > 0)
+```
+
+Create "DepHour" column in flight_delayed data frame.
+```{r}
+flight_delayed$DepHour <- trunc(flight_delayed$CRSDepTime/100)
+
+# DepHour contains integer values representing hour of the day (0 ~ 23)
+```
+
+# 1a. Best time of day to fly to minimise delays
+```{r}
+flight_delayed_hour <- flight_delayed %>% group_by(DepHour) %>% summarise(avg_delay = mean(ArrDelay))
+
+flight_delayed_hour
+```
+
+```{r}
+ggplot(flight_delayed_hour, aes(x = DepHour, y = avg_delay)) +
+  geom_line() + 
+  ylim(10, 45) +
+  scale_x_continuous(breaks = seq(0, 23, 1)) +
+  labs(title = "Relationship between Departure Time and Delay", x = "Departure Hour", y = "Average Delay in Minutes")
+
+```
+
+# 1b. Best day of week to fly to minimise delays
+```{r}
+flight_delayed_day <- flight_delayed %>% group_by(DayOfWeek) %>% summarise(avg_delay = mean(ArrDelay))
+
+flight_delayed_day
+
+```
+
+```{r}
+ggplot(flight_delayed_day, aes(x = DayOfWeek, y = avg_delay)) +
+  geom_line() + 
+  ylim(20, 40) +
+  scale_x_continuous(breaks = seq(0, 7, 1)) +
+  labs(title = "Relationship between Departure Day and Delay", x = "Day of Week", y = "Average Delay in Minutes")
+
+```
+
+# 1c. Best month of year to fly to minimise delays
+```{r}
+flight_delayed_month <- flight_delayed %>% group_by(Month) %>% summarise(avg_delay = mean(ArrDelay))
+
+flight_delayed_month
+
+```
+
+```{r}
+ggplot(flight_delayed_month, aes(x = Month, y = avg_delay)) +
+  geom_line() + 
+  ylim(20, 40) +
+  scale_x_continuous(breaks = seq(0, 12, 1)) +
+  labs(title = "Relationship between Departure Month and Delay", x = "Month", y = "Average Delay in Minutes")
+
+```
+
+
+# 2. Do older planes suffer more delays?
+```{r}
+planes <- read.csv("dataverse_files/plane-data.csv", sep=",", header=TRUE)
+
+main_df <- dplyr::left_join(x=flight_df, y=planes[ , c("tailnum", "year")], by = c('TailNum'='tailnum'))
+
+# Join "flight_df" with a subset of the "planes" data frame. The subset contains the "tailnum" and "year" columns. The join is performed by matching the "TailNum" column in "flight_df" with the "tailnum" column in the "planes" data frame. The resulting data frame is called "main_df".
+```
+
+```{r}
+# Calculate age of plane by using the year of the flight(2005, 2006) minus the manufacture year of the plane. 
+main_df$PlaneAge <- main_df$Year - as.integer(main_df$year)
+
+# drop null values and filter out data where year = 0
+main_df <- main_df %>% drop_na() %>% filter(year!=0)
+
+str(main_df)
+```
+
+```{r}
+plane_delay <- main_df %>% group_by(PlaneAge) %>% filter(PlaneAge > 0, PlaneAge < 2005) %>% summarise(avg_delay = mean(ArrDelay))
+
+plane_delay
+```
+
+```{r, fig.width=14, fig.height=7}
+ggplot(plane_delay, aes(x = PlaneAge, y = avg_delay)) +
+  geom_line() + 
+  scale_x_continuous(breaks = seq(0, 50, 1)) +
+  labs(title = "Relationship between plane age and delay", x = "Plane Age", y = "Average Delay in Minutes")
+```
+
+
+# 3. How does the number of people flying between different locations change over time? 
+```{r}
+airports <- read.csv("dataverse_files/airports.csv", sep=",", header=TRUE)
+
+main_df <- dplyr::left_join(x=main_df, y=airports[ , c("iata", "airport", "lat", "long")], by = c('Origin'='iata'))
+
+```
+
+Calculate the flight frequencies between different flight routes.
+```{r}
+flight_freq <- main_df %>%
+  left_join(airports, by = c("Origin" = "iata")) %>%  
+  select(Year, Origin, Dest) %>%
+  group_by(Year, Origin, Dest) %>% 
+  count(Origin) %>% 
+  arrange(desc(n))
+
+```
+
+Filter top 10 popular routes in 2005.
+```{r}
+top10_2005 <- flight_freq[flight_freq$Year == 2005, ] %>% 
+  arrange(desc(n)) %>%
+  mutate(Route = paste0(Origin,' to ', Dest)) %>%
+  head(10) %>%
+  arrange(desc(Route))
+
+top10_2005
+
+```
+
+Filter to match the top 10 routes in 2005 from 2006 flight data.
+```{r}
+top10_2006 <- flight_freq[flight_freq$Year == 2006,] %>%
+  mutate(Route = paste0(Origin,' to ', Dest)) %>%
+  filter(Route %in% top10_2005$Route) %>%
+  arrange(desc(Route))
+
+top10_2006
+
+# %in% operator is used to test whether a vector or set of values is contained in another vector or set of values. It returns a logical vector of the same length as the left-hand side vector indicating whether each element of the left-hand side vector is found in the right-hand side vector.
+```
+
+Calculate the change in number of flights for 2005 top 10 routes.
+```{r}
+Route_diff <- top10_2006$n - top10_2005$n
+
+Route_diff
+```
+
+```{r}
+ggplot(top10_2006, aes(x = top10_2006$Route, y = Route_diff, fill =  Route_diff > 0)) + 
+  geom_col() + 
+  scale_fill_manual(values = c("lightblue", "beige")) +
+  coord_flip() +
+  labs(x = "Top 10 flight routes in 2005", y = "Value") +
+  ggtitle("Flight change between 2005 and 2006") +
+  geom_text(aes(label = signif(Route_diff)), nudge_y = 40, size = 3) +
+  theme_minimal()
+
+```
+
+
+# 4. Can you detect cascading failures as delays in one airport create delays in others?
+```{r}
+Late_aircraft_delay <- flight_df %>%
+                       filter(TailNum != 0 & LateAircraftDelay < 120 & LateAircraftDelay > 0) %>%
+                       select(Year, Month, DayofMonth, DepDelay, ArrDelay, 
+                              TailNum, Origin, Dest, LateAircraftDelay) %>%
+                       arrange(desc(LateAircraftDelay)) %>%
+                       rename("Year" = 1, "Month" = 2, "DayofMonth" = 3, "DepDelay" = 4, "ArrDelay" = 5, 
+                              "TailNum" = 6, "Origin" = 7, 
+                              "Dest" = 8, "LateAircraftDelay" = 9)
+
+```
+
+
+```{r}
+N462UA <- flight_df %>%
+          filter(Year == 2005 & Month == 1 & DayofMonth == 3 & TailNum == 'N462UA') %>%
+          select(Year, Month, DayofMonth, CRSDepTime, DepDelay, ArrDelay, 
+                              TailNum, Origin, Dest, LateAircraftDelay) %>%
+          arrange(CRSDepTime) %>%
+          rename("Year" = 1, "Month" = 2, "DayofMonth" = 3, "CRSDepTime" = 4, "DepDelay" = 5, "ArrDelay" = 6, 
+                 "TailNum" = 7, "Origin" = 8, 
+                 "Dest" = 9, "LateAircraftDelay" = 10)
+
+N462UA
+```
+
+
+# 5. Use the available variables to construct a model that predicts delays.
+```{r}
+library('mlr3')
+library('mlr3learners')
+library('mlr3pipelines')
+
+```
+
+From the Python results, we found out 6 variables correlated with ArrDelay.
+```{r}
+modelling_df <- main_df %>%
+  select(DepDelay, LateAircraftDelay, CarrierDelay, NASDelay, TaxiOut, WeatherDelay, ArrDelay) %>%
+  rename("DepDelay" = DepDelay,
+         "LateAircraftDelay" = LateAircraftDelay,
+         "CarrierDelay" = CarrierDelay,
+         "NASDelay" = NASDelay,
+         "TaxiOut" = TaxiOut,
+         "WeatherDelay" = WeatherDelay,
+         "ArrDelay" = ArrDelay)
+
+```
+
+
+```{r}
+task <- TaskRegr$new('Arr_Delay', backend = modelling_df, target = 'ArrDelay')
+
+measure <- msr("regr.mse")
+```
+
+Linear regression model
+```{r}
+learner_lm <- lrn('regr.lm')
+gr_lm <- po('imputemean') %>>%
+ po(learner_lm)
+glrn_lm <- GraphLearner$new(gr_lm)
+
+```
+
+```{r}
+set.seed(123)
+train_set <- sample(task$nrow, 0.7 * task$nrow) 
+test_set <- setdiff(seq_len(task$nrow), train_set)
+glrn_lm$train(task, row_ids = train_set)
+glrn_lm$predict(task, row_ids = test_set)$score() 
+
+measure
+
+```
+
+
+Ridge regression model
+```{r}
+# install.packages("glmnet")
+library(glmnet)
+
+learner_ridge <- lrn('regr.glmnet') 
+learner_ridge$param_set$values <- list(alpha = 0)
+gr_ridge <- po('scale') %>>%
+ po('imputemean') %>>%
+ po(learner_ridge)
+glrn_ridge <- GraphLearner$new(gr_ridge)
+
+```
+
+```{r}
+library('mlr3tuning')
+library('paradox')
+
+# Set up tuning environment
+tune_lambda <- ParamSet$new (list(
+ParamDbl$new('regr.glmnet.lambda', lower = 0.001, upper = 1)
+))
+tuner<-tnr('grid_search')
+terminator <- trm('evals', n_evals = 20)
+
+#Put everything together in a new learner
+at_ridge <- AutoTuner$new(
+ learner = glrn_ridge,
+ resampling = rsmp('cv', folds = 3),
+ measure = measure,
+ search_space = tune_lambda,
+ terminator = terminator,
+ tuner = tuner
+)
+
+#Train the learner on the training data
+at_ridge$train(task, row_ids = train_set)
+
+```
+
+
+```{r}
+at_ridge$predict(task, row_ids = test_set)$score() 
+
+measure
+
+```
+
+
+Lasso regression model
+```{r}
+learner_lasso <- lrn('regr.glmnet') 
+learner_lasso$param_set$values <- list(alpha = 1, lambda = 0.03)
+gr_lasso <- po('scale') %>>%
+ po('imputemean') %>>%
+ po(learner_lasso)
+glrn_lasso <- GraphLearner$new(gr_lasso)
+glrn_lasso$train(task, row_ids = train_set)
+glrn_lasso$predict(task, row_ids = test_set)$score() 
+
+measure
+
+```
+
+
+
+
+
+
+
+
