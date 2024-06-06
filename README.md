@@ -1,6 +1,6 @@
-# st2195_coursework
+# flight_data_analysis
 
-### Coursework instructions
+### Instructions
 The 2009 ASA Statistical Computing and Graphics Data Expo consisted of flight arrival and departure 
 details for all commercial flights on major carriers within the USA, from October 1987 to April 2008. 
 This is a large dataset; there are nearly 120 million records in total, and takes up 1.6 gigabytes of space 
