@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # Set working directory to the source file location
 The source file location includes this .Rmd file and dataverse_files
 ```{r}
-# setwd("C:/Users/Lei Yuhe/OneDrive - SIM - Singapore Institute of Management/UOL_YearTwo/ST2195/210406713")
+
 ```
 
 # Install and load packages
